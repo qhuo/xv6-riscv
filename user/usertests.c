@@ -2599,6 +2599,22 @@ nullptr(char *s)
   printf("*(const char*)0 == %x\n", (int) c);
 }
 
+// Expect fail.
+// Shall not be able to write to the TEXT section.
+void
+badptr(char *s)
+{
+  printf("badptr\n");
+
+  char* const pz = (char*) 0;
+
+  const char c = *pz;
+
+  *pz = (char) (c+1);
+
+  printf("badptr done\n");
+}
+
 
 struct test {
   void (*f)(char *);
@@ -2665,6 +2681,7 @@ struct test {
   {sbrk8000, "sbrk8000"},
   {badarg, "badarg" },
   {nullptr, "nullptr"},
+  {badptr, "badptr"},
 
   { 0, 0},
 };
