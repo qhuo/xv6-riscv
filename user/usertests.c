@@ -2586,6 +2586,20 @@ badarg(char *s)
   exit(0);
 }
 
+
+// Test NULL pointer access.
+// FIXME: this shouldn't pass.
+void
+nullptr(char *s)
+{
+  const char* const pz = (const char*) 0;
+
+  const char c = *pz;
+
+  printf("*(const char*)0 == %x\n", (int) c);
+}
+
+
 struct test {
   void (*f)(char *);
   char *s;
@@ -2650,6 +2664,7 @@ struct test {
   {sbrklast, "sbrklast"},
   {sbrk8000, "sbrk8000"},
   {badarg, "badarg" },
+  {nullptr, "nullptr"},
 
   { 0, 0},
 };
