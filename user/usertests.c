@@ -2604,6 +2604,8 @@ nullptr(char *s)
 void
 badptr(char *s)
 {
+  (void)s;
+#if 0
   printf("badptr\n");
 
   char* const pz = (char*) 0;
@@ -2613,6 +2615,7 @@ badptr(char *s)
   *pz = (char) (c+1);
 
   printf("badptr done\n");
+#endif
 }
 
 
