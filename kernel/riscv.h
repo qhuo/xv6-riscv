@@ -363,12 +363,18 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // user can access
 
+// In order to implement copy-on-write,
+// we use one of the RSW bits (bit 8) as a value holder for the PTE_W bit.
+#define PTE_8W (1L << 8)
+
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
+
+#define CLEAR_BIT(w, bit) ((w) & ~(bit))
 
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK          0x1FF // 9 bits

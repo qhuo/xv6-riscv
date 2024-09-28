@@ -324,6 +324,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+
+    // copy-on-write step 1:
+    // Turn off the PTE_W bit, but a private physical page is still mapped.
+    if (flags & PTE_W)
+    {
+      flags |= PTE_8W;
+      flags &= ~PTE_W;
+    }
+
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
@@ -367,8 +376,15 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       return -1;
     pte = walk(pagetable, va0, 0);
     if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+       (*pte & (PTE_W|PTE_8W)) == 0)
       return -1;
+
+    if ((*pte & (PTE_W|PTE_8W)) == PTE_8W)
+    {
+      *pte |= PTE_W;
+      printf("[copyout] copy-on-write: set PTE_W bit\n");
+    }
+
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)

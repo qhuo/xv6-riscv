@@ -16,6 +16,8 @@ void kernelvec();
 
 extern int devintr();
 
+static int page_fault_user_store(struct proc* p);
+
 void
 trapinit(void)
 {
@@ -36,6 +38,7 @@ trapinithart(void)
 void
 usertrap(void)
 {
+  uint64 cause;
   int which_dev = 0;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
@@ -50,7 +53,7 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if((cause = r_scause()) == 8){
     // system call
 
     if(killed(p))
@@ -65,6 +68,13 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(cause == 15) {
+    // page fault (store, AMO):
+    // - include the copy-on-write case.
+    if (page_fault_user_store(p) != 0) {
+      // Not handled.
+      setkilled(p);
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -216,3 +226,42 @@ devintr()
   }
 }
 
+// Handle the page fault caused by user store instruction.
+// - check and handle the copy-on-write scenario.
+//
+// Returns 0 if the fault was handled,
+// otherwise returns -1, in which case the process would be killed by the caller.
+static int
+page_fault_user_store(struct proc* p)
+{
+  uint64 fault_va;
+  pte_t* pte;
+
+  fault_va = r_stval();
+
+  printf("page_fault_user_store(): pid=%d\n", p->pid);
+  printf("  sepc=0x%lx stval=0x%lx\n", r_sepc(), fault_va);
+
+  if (fault_va >= PGROUNDUP(p->sz))
+  {
+    printf("fault address out of bound: %lx\n", fault_va);
+    return -1;
+  }
+
+  pte = walk(p->pagetable, fault_va, 0);
+
+  if (!pte || !(*pte & PTE_V))
+  {
+    printf("fault address was not mapped: %lx\n", fault_va);
+    return -1;
+  }
+
+  if ((*pte & (PTE_W|PTE_8W)) == PTE_8W)
+  {
+    *pte |= PTE_W;
+    printf("copy-on-write: set PTE_W bit\n");
+    return 0;
+  }
+
+  return -1;
+}
