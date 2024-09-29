@@ -11,7 +11,7 @@
 #include "page.h"
 
 static void freerange(void *pa_start, void *pa_end);
-static void kfree1(void* pa, int decrease_ref);
+static void kfree1(void* pa);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -64,7 +64,7 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree1(p, 0);
+    kfree1(p);
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -74,40 +74,39 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void* pa)
 {
-  kfree1(pa, 1);
-}
-
-void
-kfree1(void *pa, int decrese_ref)
-{
-  struct run *r;
+  struct page *pd;
+  uint64 pfn;
+  int ref;
 
   //printf("kree1: pa=%p\n", pa);
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  if (decrese_ref) {
-    uint64 pfn = pa_to_pfn((uint64)pa);
-    struct page *pd = &pages[pfn];
+  pfn = pa_to_pfn((uint64)pa);
+  pd = &pages[pfn];
 
-    acquire(&pd->lock);
+  acquire(&pd->lock);
+  if (pd->ref <= 0)
+    panic("kfree: page has zero or negative ref count");
+  ref = --pd->ref;
+  release(&pd->lock);
 
-    if (pd->ref <= 0)
-      panic("kfree: page has zero or negative ref count");
-    
-    if (--pd->ref > 0) {
-      printf("kfree: pa=0x%lx, ref count becomes %d\n", (uint64)pa, pd->ref);
-    }
-    
-    release(&pd->lock);
+  // It's safe to perform this check outside the page descriptor lock.
+  // If ref != 0, we are already done.
+  // Otherwise, ref == 0, so "pa" was exclusively owned. There shall not
+  // concurrent access on pa from elsewhere.
+  if (ref) {
+    //printf("kfree: pa=0x%lx, ref count becomes %d, not freed\n", (uint64)pa, ref);
   } else {
-    uint64 pfn = pa_to_pfn((uint64)pa);
-    struct page *pd = &pages[pfn];
-
-    if (pd->ref != 0)
-      panic("kfree for freerange: page has non-zero ref count");    
+    kfree1(pa);
   }
+}
+
+void
+kfree1(void *pa)
+{
+  struct run *r;
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);

@@ -355,7 +355,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       goto err;
     }
 
-    printf("[COW]: mapped va=0x%lx -> pa=0x%lx, flags=0x%x\n", i, pa, flags);
+    //printf("[COW]: mapped va=0x%lx -> pa=0x%lx, flags=0x%x\n", i, pa, flags);
   }
   return 0;
 

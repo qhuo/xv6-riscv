@@ -286,12 +286,12 @@ page_fault_user_store(struct proc* p)
     
     release(&pd->lock);
 
-    sfence_vma();
+    sfence_vma_pte((uint64) fault_va);
 
     if (exclusive) {
-      printf("[COW]: pa=0x%lx is exclusively\n", pa);
+      //printf("[COW]: pa=0x%lx is exclusive\n", pa);
     } else {
-      printf("[COW]: cloned pa=0x%lx to 0x%lx\n", pa, (uint64)mem);
+      //printf("[COW]: cloned pa=0x%lx to 0x%lx\n", pa, (uint64)mem);
     }
     
     return 0;

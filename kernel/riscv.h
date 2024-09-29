@@ -346,6 +346,15 @@ sfence_vma()
   asm volatile("sfence.vma zero, zero");
 }
 
+// flush the TLB when updating a particular leaf PTE.
+// - va is a virtual address mapped by the leaf PTE.
+static inline void
+sfence_vma_pte(uint64 x)
+{
+  // the zero, zero means flush all TLB entries.
+  asm volatile("sfence.vma %0, zero" : : "r" (x));
+}
+
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
 
