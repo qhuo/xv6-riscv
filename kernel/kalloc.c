@@ -8,11 +8,14 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "page.h"
 
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
+extern char end_pg[];   // first page-aligned address after kernel.
+                        // defined by kernel.ld.
 
 struct run {
   struct run *next;
@@ -23,11 +26,33 @@ struct {
   struct run *freelist;
 } kmem;
 
+// The (physical) page descriptor table.
+// Indexed by the page frame number.
+struct page_t page[NPAGES];
+
+// Convert a physical address to a page frame number.
+// Pre-condition: end_pg <= pa < PHYSTOP
+uint64
+pa_to_pfn(uint64 pa)
+{
+  if ((pa % PGSIZE) != 0 || pa < (uint64)end_pg || pa > (uint64)PHYSTOP)
+    panic("pa_to_pfn");
+
+  return (pa - (uint64)end_pg) >> 12;
+}
+
 void
 kinit()
 {
+  int i;
+
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+
+  for (i=0; i<NPAGES; ++i) {
+    initlock(&page[i].lock, "page");
+    page[i].ref = 0;
+  }
 }
 
 void
