@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "page.h"
 
 /*
  * the kernel's page table.
@@ -313,9 +315,9 @@ int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
-  uint64 pa, i;
+  struct page *pd;
+  uint64 pa, i, pfn;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -323,23 +325,37 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    
+    // Copy-on-Write:
+    // - For both new and old pagetables,
+    //   turn off the PTE_W bit, put the previous PTE_W in PTE_8W.
+    // - Increase the ref count of the physical page.
+    //
+    // Note: we can freely modify *pte (from the old pagetable) as
+    // uvmcopy() is only called by fork(). There cannot be currently
+    // access to the old pagetable.
+    if (*pte & PTE_W)
+    {
+      *pte = ((*pte & ~PTE_W) | PTE_8W);
+    }
+
+    pfn = pa_to_pfn(pa);
+    pd = &pages[pfn];
+
+    acquire(&pd->lock);
+    ++pd->ref;
+    release(&pd->lock);
+
     flags = PTE_FLAGS(*pte);
 
-    // copy-on-write step 1:
-    // Turn off the PTE_W bit, but a private physical page is still mapped.
-    if (flags & PTE_W)
-    {
-      flags |= PTE_8W;
-      flags &= ~PTE_W;
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      acquire(&pd->lock);
+      --pd->ref;
+      release(&pd->lock);
+      goto err;
     }
 
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
-    }
+    printf("[COW]: mapped va=0x%lx -> pa=0x%lx, flags=0x%x\n", i, pa, flags);
   }
   return 0;
 

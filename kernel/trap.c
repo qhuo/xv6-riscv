@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "page.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -234,13 +235,16 @@ devintr()
 static int
 page_fault_user_store(struct proc* p)
 {
-  uint64 fault_va;
+  uint64 fault_va, pa, pfn, flags;
   pte_t* pte;
+  struct page *pd;
+  void *mem;
+  int exclusive;
 
   fault_va = r_stval();
 
-  printf("page_fault_user_store(): pid=%d\n", p->pid);
-  printf("  sepc=0x%lx stval=0x%lx\n", r_sepc(), fault_va);
+  //printf("page_fault_user_store(): pid=%d\n", p->pid);
+  //printf("  sepc=0x%lx stval=0x%lx\n", r_sepc(), fault_va);
 
   if (fault_va >= PGROUNDUP(p->sz))
   {
@@ -258,8 +262,38 @@ page_fault_user_store(struct proc* p)
 
   if ((*pte & (PTE_W|PTE_8W)) == PTE_8W)
   {
-    *pte |= PTE_W;
-    printf("copy-on-write: set PTE_W bit\n");
+    // Copy-on-Write.
+    pa = PTE2PA(*pte);
+    pfn = pa_to_pfn(pa);
+    pd = &pages[pfn];
+
+    acquire(&pd->lock);
+    
+    exclusive = (pd->ref == 1);
+
+    if (exclusive) {
+      // Exclusively owned.
+      *pte |= PTE_W;
+    } else {
+      // Need to alloc a new private page.
+      mem = kalloc();
+      memmove(mem, (char*)pa, PGSIZE);
+      --pd->ref;
+
+      flags = PTE_FLAGS(*pte);
+      *pte = (PA2PTE(mem) | flags | PTE_W);
+    }
+    
+    release(&pd->lock);
+
+    sfence_vma();
+
+    if (exclusive) {
+      printf("[COW]: pa=0x%lx is exclusively\n", pa);
+    } else {
+      printf("[COW]: cloned pa=0x%lx to 0x%lx\n", pa, (uint64)mem);
+    }
+    
     return 0;
   }
 

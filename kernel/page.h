@@ -1,7 +1,7 @@
 // Physical page descriptor.
-struct page_t {
+struct page {
   struct spinlock lock;
   uint ref;
 };
 
-extern struct page_t page[NPAGES];
+extern struct page pages[NPAGES];
