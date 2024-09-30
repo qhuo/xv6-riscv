@@ -241,6 +241,76 @@ copyinstr3(char *s)
   }
 }
 
+// Test that we can create far more processes than w/o COW.
+// 30 childs * 10M bytes each = 300M, which is greater than 128M,
+// the current physical memory limit.
+void cowforktest(char* s)
+{
+  char *ptr = 0, *ptr_objective = (char*)(10 * 1024 * 1024);
+  int i, nchild=30, j, child_status;
+  const char* signal_file = "cowforktest.signal";
+
+  unlink(signal_file);
+
+  // In the parent process, keep calling sbrk() until our address space
+  // is more than 10M. Also make sure we write to each page to defeat
+  // any possible lazy allocation optimisation.
+  while (ptr < ptr_objective) {
+    ptr = sbrk(4000);
+    if (ptr == (char*)(uint64)(-1)) {
+      printf("cow_fork_test: sbrk failed\n");
+      exit(1);
+    }
+    ptr += 3999;
+    *ptr = 0xAA;
+  }
+  printf("cow_fork_test: parent process size=%lx\n", (uint64)ptr);
+
+  // Keep forking children until we run out memory [or other kernel resource].
+  for (i=1; i<=nchild; ++i) {
+    int pid = fork();
+
+    if (pid < 0) {
+      printf("cow_fork_test: fork() failed\n");
+      exit(1);
+    }
+
+    if (pid == 0) { // Child process.
+      for (;;) {
+        if (open(signal_file, 0) >= 0)
+          exit(0);
+        else
+          sleep(1);
+      }
+    }
+    
+    else { // Parent process.
+      if (i == 10 || i == 20 || i == 30) {
+        printf("cow_fork_test: count=%d\n", i);
+      }
+    }
+  }
+
+  sleep(10); // one seconds
+  close(open(signal_file, O_CREATE|O_RDWR));
+
+  for (j=0; wait(&child_status) != -1; ++j) {
+    if (child_status != 0) {
+      printf("cow_fork_test: unexpected child process status: %d\n", child_status);
+      exit(1);
+    }
+  }
+
+  unlink(signal_file);
+
+  printf("cow_fork_test: %d children reaped\n", j);
+
+  if (j != nchild) {
+    printf("cow_fork_test: failed to reap some child process: %d", nchild-j);
+    exit(1);
+  }
+}
+
 // See if the kernel refuses to read/write user memory that the
 // application doesn't have anymore, because it returned it.
 void
@@ -2628,6 +2698,7 @@ struct test {
   {copyinstr1, "copyinstr1"},
   {copyinstr2, "copyinstr2"},
   {copyinstr3, "copyinstr3"},
+  {cowforktest, "cowforktest"},
   {rwsbrk, "rwsbrk" },
   {truncate1, "truncate1"},
   {truncate2, "truncate2"},
