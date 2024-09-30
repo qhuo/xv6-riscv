@@ -397,8 +397,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
     if ((*pte & (PTE_W|PTE_8W)) == PTE_8W)
     {
-      *pte |= PTE_W;
-      printf("[copyout] copy-on-write: set PTE_W bit\n");
+      // Copy-on-Write page.
+      // Make the page private, thus writable.
+      if (make_cow_page_private(pte, va0) != 0)
+        return -1;
     }
 
     pa0 = PTE2PA(*pte);
@@ -480,4 +482,55 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// Make the page referred to by pte (which should be currently Copy-on-Write)
+// private, and thus writable.
+// fault_va is a virtual address mapped by this PTE (used to flush the TLB).
+// Returns 0 for success, or -1 for failing to allocate a new page.
+int
+make_cow_page_private(pte_t* pte, uint64 fault_va)
+{
+  uint64 pa, pfn, flags;
+  struct page *pd;
+  void *mem;
+  int exclusive;
+
+  pa = PTE2PA(*pte);
+  pfn = pa_to_pfn(pa);
+  pd = &pages[pfn];
+
+  acquire(&pd->lock);
+  
+  exclusive = (pd->ref == 1);
+
+  if (exclusive) {
+    // Exclusively owned.
+    *pte |= PTE_W;
+  } else {
+    // Need to alloc a new private page.
+    mem = kalloc();
+    if (!mem) {
+      release(&pd->lock);
+      return -1;
+    }
+
+    memmove(mem, (char*)pa, PGSIZE);
+    --pd->ref;
+
+    flags = PTE_FLAGS(*pte);
+    *pte = (PA2PTE(mem) | flags | PTE_W);
+  }
+  
+  release(&pd->lock);
+
+  sfence_vma_pte((uint64) fault_va);
+
+  if (exclusive) {
+    //printf("[COW]: pa=0x%lx is exclusive\n", pa);
+  } else {
+    //printf("[COW]: cloned pa=0x%lx to 0x%lx\n", pa, (uint64)mem);
+  }
+  
+  return 0;
 }

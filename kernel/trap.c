@@ -235,11 +235,8 @@ devintr()
 static int
 page_fault_user_store(struct proc* p)
 {
-  uint64 fault_va, pa, pfn, flags;
+  uint64 fault_va;
   pte_t* pte;
-  struct page *pd;
-  void *mem;
-  int exclusive;
 
   fault_va = r_stval();
 
@@ -263,38 +260,12 @@ page_fault_user_store(struct proc* p)
   if ((*pte & (PTE_W|PTE_8W)) == PTE_8W)
   {
     // Copy-on-Write.
-    pa = PTE2PA(*pte);
-    pfn = pa_to_pfn(pa);
-    pd = &pages[pfn];
-
-    acquire(&pd->lock);
-    
-    exclusive = (pd->ref == 1);
-
-    if (exclusive) {
-      // Exclusively owned.
-      *pte |= PTE_W;
-    } else {
-      // Need to alloc a new private page.
-      mem = kalloc();
-      memmove(mem, (char*)pa, PGSIZE);
-      --pd->ref;
-
-      flags = PTE_FLAGS(*pte);
-      *pte = (PA2PTE(mem) | flags | PTE_W);
+    if (make_cow_page_private(pte, fault_va) == 0)
+      return 0;
+    else {
+      printf("[COW] out of memory, killing process %d", p->pid);
+      return -1;
     }
-    
-    release(&pd->lock);
-
-    sfence_vma_pte((uint64) fault_va);
-
-    if (exclusive) {
-      //printf("[COW]: pa=0x%lx is exclusive\n", pa);
-    } else {
-      //printf("[COW]: cloned pa=0x%lx to 0x%lx\n", pa, (uint64)mem);
-    }
-    
-    return 0;
   }
 
   return -1;
