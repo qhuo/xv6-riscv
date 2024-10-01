@@ -338,6 +338,14 @@ r_ra()
   return x;
 }
 
+static inline uint64
+r_gp()
+{
+  uint64 x;
+  asm volatile("mv %0, gp" : "=r" (x) );
+  return x;
+}
+
 // flush the TLB.
 static inline void
 sfence_vma()

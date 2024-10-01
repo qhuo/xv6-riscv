@@ -22,6 +22,9 @@ void            consoleinit(void);
 void            consoleintr(int);
 void            consputc(int);
 
+// dtb.c
+void            dtbinit(const char*);
+
 // exec.c
 int             exec(char*, char**);
 

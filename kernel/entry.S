@@ -5,6 +5,8 @@
 .section .text
 .global _entry
 _entry:
+        # save the DTB ptr to the gp register
+        mv gp, a1
         # set up a stack for C.
         # stack0 is declared in start.c,
         # with a 4096-byte stack per CPU.

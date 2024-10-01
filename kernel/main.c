@@ -11,11 +11,16 @@ void
 main()
 {
   if(cpuid() == 0){
+    const uint64 dtb_ptr = r_gp();
+
     consoleinit();
     printfinit();
     printf("\n");
     printf("xv6 kernel is booting\n");
     printf("\n");
+         
+    dtbinit((const char*) dtb_ptr);   // process the Device Tree Blob (DTB)
+
     kinit();         // physical page allocator
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging
