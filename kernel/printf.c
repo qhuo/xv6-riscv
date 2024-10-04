@@ -99,7 +99,7 @@ printf(char *fmt, ...)
       printint(va_arg(ap, uint64), 10, 0);
       i += 2;
     } else if(c0 == 'x'){
-      printint(va_arg(ap, int), 16, 0);
+      printint(va_arg(ap, uint32), 16, 0);
     } else if(c0 == 'l' && c1 == 'x'){
       printint(va_arg(ap, uint64), 16, 0);
       i += 1;
